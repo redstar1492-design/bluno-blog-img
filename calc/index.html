@@ -69,7 +69,8 @@
   footer{font-size:13px;color:var(--sub);padding:4px 2px}
   footer p{margin:0 0 6px}
   footer .warn{color:var(--ink);font-weight:700}
-  .err{color:var(--red);font-size:13px;margin-top:6px;display:none}
+  .err{color:var(--red);font-size:14px;font-weight:700;margin:12px 0 0;display:none}
+  .inbox.bad{border-color:var(--red);background:var(--red-soft)}
 </style>
 </head>
 <body>
@@ -127,7 +128,7 @@
       </div>
       <p class="method-note" id="methodNote"></p>
     </div>
-    <p class="err" id="err">원금·기간·금리를 숫자로 넣어 주세요.</p>
+    <p class="err" id="err" role="alert"></p>
   </section>
 
   <section class="card" aria-labelledby="h-out">
@@ -193,9 +194,28 @@
     return (neg ? "-" : "") + s;
   }
   function won(v){ return Math.round(v).toLocaleString("ko-KR") + "원"; }
+  // 숫자만 받는다. 빈칸·음수·"4.5.3"·글자 섞인 값은 NaN (원금은 천 단위 쉼표만 허용)
   function num(id){
-    var v = parseFloat(String($(id).value).replace(/[^0-9.]/g, ""));
+    var s = String($(id).value).trim();
+    if (id === "principal") s = s.replace(/,/g, "").replace(/만원$/, "");
+    if (id === "years") s = s.replace(/\s*년$/, "");
+    if (id === "rate") s = s.replace(/\s*%$/, "");
+    if (!/^\d+(\.\d+)?$/.test(s)) return NaN;
+    var v = Number(s);
     return isFinite(v) ? v : NaN;
+  }
+  var LIMIT = {
+    principal: { min: 1, max: 1000000, msg: "대출 원금은 1만원~100억원 사이로 넣어 주세요." },
+    years: { min: 1, max: 50, msg: "기간은 1년~50년 사이로 넣어 주세요." },
+    rate: { min: 0, max: 30, msg: "연 금리는 0%~30% 사이로 넣어 주세요." }
+  };
+  var RESULT_IDS = ["first", "last", "interest", "total", "pNow", "pUp", "dMonth", "dYear"];
+  function clearResults(){
+    RESULT_IDS.forEach(function(id){ $(id).textContent = "-"; });
+    $("firstExact").textContent = "";
+    $("say").textContent = "입력값을 고치면 결과가 다시 나옵니다.";
+    $("rNow").textContent = "지금 금리";
+    $("rUp").textContent = "+1%p";
   }
   function fmtRate(r){ return "연 " + (Math.round(r * 100) / 100) + "%"; }
 
@@ -220,9 +240,21 @@
   function render(){
     var Pm = num("principal"), y = num("years"), a = num("rate"), m = method();
     $("methodNote").textContent = NOTE[m];
-    var ok = Pm > 0 && y > 0 && y <= 50 && a >= 0 && a <= 30;
-    $("err").style.display = ok ? "none" : "block";
-    if (!ok) return;
+    var vals = { principal: Pm, years: y, rate: a }, msgs = [];
+    Object.keys(LIMIT).forEach(function(id){
+      var v = vals[id], L = LIMIT[id], bad = !(v >= L.min && v <= L.max);
+      $(id).setAttribute("aria-invalid", bad ? "true" : "false");
+      $(id).parentNode.classList.toggle("bad", bad);
+      if (bad) msgs.push(L.msg);
+    });
+    if (msgs.length){
+      $("err").textContent = msgs.join(" ");
+      $("err").style.display = "block";
+      $("principalTxt").textContent = "";
+      clearResults();
+      return;
+    }
+    $("err").style.display = "none";
     var P = Pm * 10000, n = Math.round(y * 12);
     $("principalTxt").textContent = man(P);
     var s = schedule(P, a, n, m), u = schedule(P, a + 1, n, m);
@@ -248,10 +280,13 @@
       " 전체 기간 이자는 약 " + man(u.interest - s.interest) + " 늘어납니다.";
   }
 
-  // 원금 입력: 천 단위 쉼표
+  // 원금 입력: 숫자·쉼표만 있을 때 천 단위 쉼표로 정리. 마이너스·소수점·글자는 지우지 않고 그대로 두어 오류로 보이게 한다.
   $("principal").addEventListener("input", function(e){
-    var raw = e.target.value.replace(/[^0-9]/g, "");
-    e.target.value = raw ? Number(raw).toLocaleString("ko-KR") : "";
+    var s = e.target.value;
+    if (/^[\d,]+$/.test(s)){
+      var raw = s.replace(/,/g, "");
+      if (raw.length <= 15) e.target.value = Number(raw).toLocaleString("ko-KR");
+    }
     render();
   });
   ["years", "rate"].forEach(function(id){ $(id).addEventListener("input", render); });
