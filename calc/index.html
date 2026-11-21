@@ -195,9 +195,17 @@
   }
   function won(v){ return Math.round(v).toLocaleString("ko-KR") + "원"; }
   // 숫자만 받는다. 빈칸·음수·"4.5.3"·글자 섞인 값은 NaN (원금은 천 단위 쉼표만 허용)
+  // 원금 쉼표 위치 검사: 쉼표가 있으면 1,000 / 50,000 / 1,234,567 같은 세 자리 묶음이어야 한다 (예: 5,0000은 오류)
+  function badComma(s){
+    s = String(s).trim().replace(/\s*만원$/, "");
+    return s.indexOf(",") >= 0 && !/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s);
+  }
   function num(id){
     var s = String($(id).value).trim();
-    if (id === "principal") s = s.replace(/,/g, "").replace(/만원$/, "");
+    if (id === "principal"){
+      if (badComma(s)) return NaN;
+      s = s.replace(/,/g, "").replace(/\s*만원$/, "");
+    }
     if (id === "years") s = s.replace(/\s*년$/, "");
     if (id === "rate") s = s.replace(/\s*%$/, "");
     if (!/^\d+(\.\d+)?$/.test(s)) return NaN;
@@ -245,7 +253,8 @@
       var v = vals[id], L = LIMIT[id], bad = !(v >= L.min && v <= L.max);
       $(id).setAttribute("aria-invalid", bad ? "true" : "false");
       $(id).parentNode.classList.toggle("bad", bad);
-      if (bad) msgs.push(L.msg);
+      if (bad) msgs.push(id === "principal" && badComma($(id).value)
+        ? "대출 원금의 쉼표 위치가 맞지 않습니다(예: 5,000). 숫자만 다시 넣어 주세요." : L.msg);
     });
     if (msgs.length){
       $("err").textContent = msgs.join(" ");
@@ -280,10 +289,13 @@
       " 전체 기간 이자는 약 " + man(u.interest - s.interest) + " 늘어납니다.";
   }
 
-  // 원금 입력: 숫자·쉼표만 있을 때 천 단위 쉼표로 정리. 마이너스·소수점·글자는 지우지 않고 그대로 두어 오류로 보이게 한다.
+  // 원금 입력: 직접 칠 때는 천 단위 쉼표로 자동 정리.
+  // 붙여넣기·끌어다 놓기는 쉼표 위치가 틀리면(5,0000) 고치지 않고 그대로 두어 오류로 보이게 한다.
+  // 마이너스·소수점·글자도 지우지 않고 그대로 둔다.
   $("principal").addEventListener("input", function(e){
     var s = e.target.value;
-    if (/^[\d,]+$/.test(s)){
+    var pasted = /^insertFrom(Paste|Drop)/.test(e.inputType || "");
+    if (/^[\d,]+$/.test(s) && !(pasted && badComma(s))){
       var raw = s.replace(/,/g, "");
       if (raw.length <= 15) e.target.value = Number(raw).toLocaleString("ko-KR");
     }
